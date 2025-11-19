@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>TTE Público Chile 2025</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; display: flex; height: 100vh; background:#000; color:#fff; }
+    #panel { width: 340px; background: #2c3e50; padding: 20px; overflow-y: auto; }
+    #map { flex: 1; }
+    h1 { font-size: 26px; margin-bottom: 20px; color: #e74c3c; }
+    label { display: block; margin: 16px 0; font-size: 17px; }
+    input[type="checkbox"] { transform: scale(1.6); margin-right: 14px; }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+</head>
+<body>
+<div id="panel">
+  <h1>TTE Público Chile 2025</h1>
+  <p><strong>Prende/apaga ciudades:</strong></p>
+  <label><input type="checkbox" checked data-city="santiago"> Santiago RED</label>
+  <label><input type="checkbox" checked data-city="valpo"> Valparaíso - Viña</label>
+  <label><input type="checkbox" checked data-city="conce"> Gran Concepción</label>
+  <label><input type="checkbox" checked data-city="antofa"> Antofagasta</label>
+  <label><input type="checkbox" checked data-city="temuco"> Temuco - Padre Las Casas</label>
+  <label><input type="checkbox" checked data-city="iquique"> Iquique - Alto Hospicio</label>
+  <label><input type="checkbox" checked data-city="rancagua"> Rancagua</label>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+  const map = L.map('map').setView([-35.5, -71.5], 5.5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const colores = {
+    santiago: "#e74c3c", valpo: "#3498db", conce: "#f1c40f",
+    antofa: "#9b59b6", temuco: "#e67e22", iquique: "#1abc9c", rancagua: "#27ae60"
+  };
+
+  const gtfs = {
+    santiago: "https://www.dtpm.cl/descargas/gtfs/GTFS_RED_2025.zip",
+    valpo: "https://datos.mtt.gob.cl/dataset/9f5b5e5e-5f5e-5f5e-9c3a-8b5e5f5e5f5e/resource/latest/download/gtfs_valparaiso.zip",
+    conce: "https://datos.mtt.gob.cl/dataset/8c5b5e5e-5f5e-5f5e-9c3a-8b5e5f5e5f5e/resource/latest/download/gtfs_concepcion.zip",
+    antofa: "https://datos.mtt.gob.cl/dataset/gtfs-antofagasta/resource/latest/download/gtfs_antofagasta.zip",
+    temuco: "https://datos.mtt.gob.cl/dataset/gtfs-temuco/resource/latest/download/gtfs_temuco.zip",
+    iquique: "https://datos.mtt.gob.cl/dataset/gtfs-iquique/resource/latest/download/gtfs_iquique.zip",
+    rancagua: "https://datos.mtt.gob.cl/dataset/gtfs-rancagua/resource/latest/download/gtfs_rancagua.zip"
+  };
+
+  const capas = {};
+
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const city = cb.dataset.city;
+      if (cb.checked) cargarCiudad(city);
+      else if (capas[city]) {
+        capas[city].forEach(l => map.removeLayer(l));
+        delete capas[city];
+      }
+    });
+    if (cb.checked) cargarCiudad(cb.dataset.city);
+  });
+
+  async function cargarCiudad(city) {
+    if (capas[city]) return;
+    capas[city] = [];
+    try {
+      const response = await fetch(gtfs[city]);
+      if (!response.ok) throw new Error("404");
+      const zip = await JSZip.loadAsync(await response.arrayBuffer());
+      const file = zip.file(/shapes\.txt$/i)[0];
+      const text = await file.async("text");
+      const shapes = {};
+      text.trim().split('\n').slice(1).forEach(line => {
+        const parts = line.split(',');
+        const shape_id = parts[0];
+        const lat = parseFloat(parts[1]);
+        const lon = parseFloat(parts[2]);
+        if (!shapes[shape_id]) shapes[shape_id] = [];
+        shapes[shape_id].push([lat, lon]);
+      });
+      Object.values(shapes).forEach(points => {
+        if (points.length > 1) {
+          const poly = L.polyline(points, {color: colores[city], weight: 3, opacity: 0.8});
+          poly.addTo(map);
+          capas[city].push(poly);
+        }
+      });
+      console.log(`${city} cargada`);
+    } catch (e) {
+      console.error("Error cargando", city, e);
+    }
+  }
+</script>
+</body>
+</html>
