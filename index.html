@@ -2,28 +2,29 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>TTE Público Chile 2025</title>
+  <title>TTE Público Chile 2025 – con Frecuencia Real</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { margin:0; font-family: Arial, sans-serif; display: flex; height: 100vh; background:#000; color:#fff; }
-    #panel { width: 340px; background: #2c3e50; padding: 20px; overflow-y: auto; }
+    #panel { width: 360px; background: #2c3e50; padding: 20px; overflow-y: auto; }
     #map { flex: 1; }
-    h1 { font-size: 26px; margin-bottom: 20px; color: #e74c3c; }
+    h1 { font-size: 26px; margin-bottom: 10px; color: #e74c3c; }
     label { display: block; margin: 16px 0; font-size: 17px; }
     input[type="checkbox"] { transform: scale(1.6); margin-right: 14px; }
+    .freq { font-size: 13px; color: #bdc3c7; margin-left: 38px; margin-top: -10px; }
   </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </head>
 <body>
 <div id="panel">
   <h1>TTE Público Chile 2025</h1>
-  <p><strong>Prende/apaga ciudades:</strong></p>
+  <p><strong>Ciudades (frecuencia real por línea):</strong></p>
   <label><input type="checkbox" checked data-city="santiago"> Santiago RED</label>
   <label><input type="checkbox" checked data-city="valpo"> Valparaíso - Viña</label>
   <label><input type="checkbox" checked data-city="conce"> Gran Concepción</label>
   <label><input type="checkbox" checked data-city="antofa"> Antofagasta</label>
-  <label><input type="checkbox" checked data-city="temuco"> Temuco - Padre Las Casas</label>
-  <label><input type="checkbox" checked data-city="iquique"> Iquique - Alto Hospicio</label>
+  <label><input type="checkbox" checked data-city="temuco"> Temuco</label>
+  <label><input type="checkbox" checked data-city="iquique"> Iquique</label>
   <label><input type="checkbox" checked data-city="rancagua"> Rancagua</label>
 </div>
 <div id="map"></div>
@@ -31,7 +32,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-  const map = L.map('map').setView([-35.5, -71.5], 5.5);
+  async>
+  const map = L.map('map').setView([-35.675, -71.53], 5);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
@@ -41,14 +43,14 @@
     antofa: "#9b59b6", temuco: "#e67e22", iquique: "#1abc9c", rancagua: "#27ae60"
   };
 
-  const gtfs = {
+  const gtfsUrls = {
     santiago: "https://www.dtpm.cl/descargas/gtfs/GTFS_RED_2025.zip",
-    valpo: "https://datos.mtt.gob.cl/dataset/9f5b5e5e-5f5e-5f5e-9c3a-8b5e5f5e5f5e/resource/latest/download/gtfs_valparaiso.zip",
-    conce: "https://datos.mtt.gob.cl/dataset/8c5b5e5e-5f5e-5f5e-9c3a-8b5e5f5e5f5e/resource/latest/download/gtfs_concepcion.zip",
-    antofa: "https://datos.mtt.gob.cl/dataset/gtfs-antofagasta/resource/latest/download/gtfs_antofagasta.zip",
-    temuco: "https://datos.mtt.gob.cl/dataset/gtfs-temuco/resource/latest/download/gtfs_temuco.zip",
-    iquique: "https://datos.mtt.gob.cl/dataset/gtfs-iquique/resource/latest/download/gtfs_iquique.zip",
-    rancagua: "https://datos.mtt.gob.cl/dataset/gtfs-rancagua/resource/latest/download/gtfs_rancagua.zip"
+    valpo: "https://datos.mtt.gob.cl/dataset/gtfs-valparaiso/resource/latest/download/gtfs_valparaiso.zip",
+    conce: "https://datos.mtt.gob.cl/dataset/gtfs-concepcion/latest/download/gtfs_concepcion.zip",
+    antofa: "https://datos.mtt.gob.cl/dataset/gtfs-antofagasta/latest/download/gtfs_antofagasta.zip",
+    temuco: "https://datos.mtt.gob.cl/dataset/gtfs-temuco/latest/download/gtfs_temuco.zip",
+    iquique: "https://datos.mtt.gob.cl/dataset/gtfs-iquique/latest/download/gtfs_iquique.zip",
+    rancagua: "https://datos.mtt.gob.cl/dataset/gtfs-rancagua/latest/download/gtfs_rancagua.zip"
   };
 
   const capas = {};
@@ -56,11 +58,7 @@
   document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', () => {
       const city = cb.dataset.city;
-      if (cb.checked) cargarCiudad(city);
-      else if (capas[city]) {
-        capas[city].forEach(l => map.removeLayer(l));
-        delete capas[city];
-      }
+      if (cb.checked ? cargarCiudad : removerCiudad)(city);
     });
     if (cb.checked) cargarCiudad(cb.dataset.city);
   });
@@ -68,31 +66,78 @@
   async function cargarCiudad(city) {
     if (capas[city]) return;
     capas[city] = [];
+
     try {
-      const response = await fetch(gtfs[city]);
-      if (!response.ok) throw new Error("404");
-      const zip = await JSZip.loadAsync(await response.arrayBuffer());
-      const file = zip.file(/shapes\.txt$/i)[0];
-      const text = await file.async("text");
+      const resp = await fetch(gtfsUrls[city]);
+      if (!resp.ok) throw "404";
+      const zip = await JSZip.loadAsync(await resp.arrayBuffer());
+
+      // 1. shapes.txt → trazas
+      const shapesFile = zip.file(/shapes\.txt$/i)[0];
+      const shapesTxt = await shapesFile.async("text");
       const shapes = {};
-      text.trim().split('\n').slice(1).forEach(line => {
-        const parts = line.split(',');
-        const shape_id = parts[0];
-        const lat = parseFloat(parts[1]);
-        const lon = parseFloat(parts[2]);
-        if (!shapes[shape_id]) shapes[shape_id] = [];
-        shapes[shape_id].push([lat, lon]);
+      shapesTxt.trim().split('\n').slice(1).forEach(l => {
+        const [id, lat, lon] = l.split(',');
+        if (!shapes[id]) shapes[id] = [];
+        shapes[id].push([parseFloat(lat), parseFloat(lon)]);
       });
-      Object.values(shapes).forEach(points => {
-        if (points.length > 1) {
-          const poly = L.polyline(points, {color: colores[city], weight: 3, opacity: 0.8});
-          poly.addTo(map);
-          capas[city].push(poly);
-        }
+
+      // 2. trips.txt + routes.txt → frecuencia por shape
+      const tripsTxt = await zip.file("trips.txt").async("text");
+      const routesTxt = await zip.file("routes.txt").async("text");
+      const freqTxt = await zip.file("frequencies.txt").async("text"); // ← el archivo clave
+
+      const routeColor = {};
+      routesTxt.trim().split('\n').slice(1).forEach(l => {
+        const parts = l.split(',');
+        routeColor[parts[0]] = parts[6] || colores[city]; // route_color o color oficial o fallback
       });
-      console.log(`${city} cargada`);
+
+      const freqByShape = {};
+      freqTxt.trim().split('\n').slice(1).forEach(l => {
+        const [trip_id, , , headway] = l.split(',');
+        freqByShape[trip_id] = Math.round(60 / parseInt(headway)); // buses por hora punta
+      });
+
+      const tripToShape = {};
+      tripsTxt.trim().split('\n').slice(1).forEach(l => {
+        const parts = l.split(',');
+        tripToShape[parts[2]] = parts[7]; // trip_id → shape_id
+      });
+
+      // Dibujar cada shape con grosor según frecuencia
+      Object.entries(shapes).forEach(([shape_id, points]) => {
+        if (points.length < 2) return;
+
+        // Buscar frecuencia promedio de los trips que usan este shape
+        let maxFreq = 1;
+        Object.entries(tripToShape).forEach((s, trip) => {
+          if (s === shape_id && freqByShape[trip]) maxFreq = Math.max(maxFreq, freqByShape[trip]);
+        });
+
+        const weight = maxFreq > 30 ? 8 : maxFreq > 15 ? 6 : maxFreq > 8 ? 4 : 2;
+        const opacity = maxFreq > 20 ? 0.9 : 0.7;
+
+        const poly = L.polyline(points, {
+          color: colores[city],
+          weight: weight,
+          opacity: opacity
+        }).addTo(map);
+
+        poly.bindTooltip(`Frecuencia punta: ${maxFreq} buses/h`, {sticky: true});
+        capas[city].push(poly);
+      });
+
+      console.log(`${city} cargada con frecuencia`);
     } catch (e) {
       console.error("Error cargando", city, e);
+    }
+  }
+
+  function removerCiudad(city) {
+    if (capas[city]) {
+      capas[city].forEach(l => map.removeLayer(l));
+      delete capas[city];
     }
   }
 </script>
