@@ -1,93 +1,97 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Transporte Público de Chile - Mapa Interactivo</title>
+  <title>TTE Público Chile 2025</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { margin:0; font-family: Arial; }
-    #map { height: 100vh; width: 75%; float: right; }
-    #panel { width: 23%; height: 100vh; overflow-y: auto; background: #f8f9fa; padding: 20px; box-sizing: border-box; float: left; }
-    h2 { margin-top: 0; color: #1a73e8; }
-    label { display: block; margin: 10px 0; font-size: 15px; }
-    input[type="checkbox"] { transform: scale(1.4); margin-right: 10px; }
+    body { margin:0; font-family: Arial, sans-serif; display: flex; height: 100vh; }
+    #panel { width: 320px; background: #2c3e50; color: white; padding: 20px; overflow-y: auto; }
+    #map { flex: 1; }
+    h1 { font-size: 24px; margin-bottom: 20px; color: #e74c3c; }
+    label { display: block; margin: 14px 0; font-size: 16px; }
+    input[type="checkbox"] { transform: scale(1.5); margin-right: 12px; }
   </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </head>
 <body>
 
 <div id="panel">
-  <h2>Transporte Público Chile</h2>
-  <p><strong>Activa o desactiva sistemas:</strong></p>
-  <label><input type="checkbox" checked data-system="red"> RED Santiago (Metropolitana)</label>
-  <label><input type="checkbox" checked data-system="valpo"> Valparaíso / Viña del Mar</label>
-  <label><input type="checkbox" checked data-system="conce"> Gran Concepción</label>
-  <label><input type="checkbox" checked data-system="antofa"> Antofagasta</label>
-  <label><input type="checkbox" checked data-system="temuco"> Temuco</label>
-  <label><input type="checkbox" checked data-system="iquique"> Iquique</label>
-  <label><input type="checkbox" checked data-system="rancagua"> Rancagua</label>
+  <h1>TTE Público Chile</h1>
+  <p><strong>Prende/apaga ciudades:</strong></p>
+  <label><input type="checkbox" checked data-city="santiago"> Santiago RED</label>
+  <label><input type="checkbox" checked data-city="valpo"> Valparaíso - Viña</label>
+  <label><input type="checkbox" checked data-city="conce"> Gran Concepción</label>
+  <label><input type="checkbox" checked data-city="antofa"> Antofagasta</label>
+  <label><input type="checkbox" checked data-city="temuco"> Temuco</label>
+  <label><input type="checkbox" checked data-city="iquique"> Iquique</label>
+  <label><input type="checkbox" checked data-city="rancagua"> Rancagua</label>
 </div>
 
 <div id="map"></div>
 
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC11n3UkWkCLkpvpFYccdZNvDrVniOGtU8"></script>
-<script src="https://unpkg.com/jszip/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
-  const map = new google.maps.Map(document.getElementById("map"), {
-    center: { lat: -35.675, lng: -71.543 },
-    zoom: 6,
-  });
+  const map = L.map('map').setView([-35.5, -71.5], 5.5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
 
-  const colores = { red: "#d81b60", valpo: "#00bfa5", conce: "#ffd600", antofa: "#304ffe", temuco: "#ff6d00", iquique: "#aa00ff", rancagua: "#00c853" };
+  const colores = {
+    santiago: "#e74c3c", valpo: "#3498db", conce: "#f1c40f",
+    antofa: "#9b59b6", temuco: "#e67e22", iquique: "#1abc9c", rancagua: "#27ae60"
+  };
+
   const capas = {};
 
-  const sistemas = {
-    red:     { url: "https://www.dtpm.cl/descargas/gtfs/gtfs_red.zip" },
-    valpo:   { url: "https://datos.gob.cl/dataset/32305/resource/4e505aa9-379e-472a-9e0b-3d8b84e1aa57/download/gtfs_valparaiso.zip" },
-    conce:   { url: "https://datos.gob.cl/dataset/32304/resource/020b6b9f-7d9a-4e3e-9e9f-9b9f8e9f8e9f/download/gtfs_biobio.zip" },
-    antofa:  { url: "https://datos.gob.cl/dataset/32303/resource/7f2a0c85-0b53-4e0b-8a0b-0e9b7e9f8d3c/download/gtfs_antofagasta.zip" },
-    temuco:  { url: "https://datos.gob.cl/dataset/32306/resource/1c6d5e15-3f50-4a2f-9b0a-5e9f8d9e7f8g/download/gtfs_temuco.zip" },
-    iquique: { url: "https://datos.gob.cl/dataset/32307/resource/9a8b7c6d-5e4f-3g2h-1i0j-9k8l7m6n5o4p/download/gtfs_iquique.zip" },
-    rancagua:{ url: "https://datos.gob.cl/dataset/32308/resource/3d4e5f6g-7h8i-9j0k-1l2m-3n4o5p6q/download/gtfs_rancagua.zip" }
+  const gtfs = {
+    santiago: "https://www.dtpm.cl/descargas/gtfs/gtfs_red.zip",
+    valpo:    "https://transparencia.mtt.gob.cl/archivos/GTFS_Valparaiso_2025.zip",
+    conce:    "https://transparencia.mtt.gob.cl/archivos/GTFS_Biobio_2025.zip",
+    antofa:   "https://transparencia.mtt.gob.cl/archivos/GTFS_Antofagasta_2025.zip",
+    temuco:   "https://transparencia.mtt.gob.cl/archivos/GTFS_Temuco_2025.zip",
+    iquique:  "https://transparencia.mtt.gob.cl/archivos/GTFS_Iquique_2025.zip",
+    rancagua: "https://transparencia.mtt.gob.cl/archivos/GTFS_Rancagua_2025.zip"
   };
 
   document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', function() {
-      const sys = this.dataset.system;
-      if (this.checked && !capas[sys]) cargarGTFS(sys);
-      if (!this.checked && capas[sys]) {
-        capas[sys].forEach(p => p.setMap(null));
-        capas[sys] = null;
+      const city = this.dataset.city;
+      if (this.checked) cargarCiudad(city);
+      else if (capas[city]) {
+        capas[city].forEach(l => map.removeLayer(l));
+        delete capas[city];
       }
     });
-    if (cb.checked) cargarGTFS(cb.dataset.system);
+    if (cb.checked) cargarCiudad(cb.dataset.city);
   });
 
-  async function cargarGTFS(sys) {
-    if (capas[sys]) return;
-    capas[sys] = [];
+  async function cargarCiudad(city) {
+    if (capas[city]) return;
+    capas[city] = [];
     try {
-      const resp = await fetch(sistemas[sys].url);
-      const zipData = await resp.arrayBuffer();
-      const zip = await JSZip.loadAsync(zipData);
-      const text = await zip.file("shapes.txt").async("text");
+      const r = await fetch(gtfs[city]);
+      const zip = await JSZip.loadAsync(await r.arrayBuffer());
+      const file = zip.file(/shapes\.txt/i)[0];
+      const txt = await file.async("text");
+
       const shapes = {};
-      text.trim().split('\n').slice(1).forEach(l => {
-        const [id, lat, lon, seq] = l.split(',');
+      txt.trim().split('\n').slice(1).forEach(l => {
+        const [id, lat, lon] = l.split(',');
         if (!shapes[id]) shapes[id] = [];
-        shapes[id].push({lat: parseFloat(lat), lng: parseFloat(lon), seq: parseInt(seq)});
+        shapes[id].push([parseFloat(lat), parseFloat(lon)]);
       });
-      Object.values(shapes).forEach(pts => {
-        pts.sort((a,b) => a.seq - b.seq);
-        const poly = new google.maps.Polyline({
-          path: pts.map(p => ({lat: p.lat, lng: p.lng})),
-          strokeColor: colores[sys],
-          strokeOpacity: 0.8,
-          strokeWeight: 2.5,
-          map: map
-        });
-        capas[sys].push(poly);
+
+      Object.values(shapes).forEach(points => {
+        const pl = L.polyline(points, { color: colores[city], weight: 2.8, opacity: 0.8 });
+        pl.addTo(map);
+        capas[city].push(pl);
       });
-    } catch (e) { console.error("Error en " + sys, e); }
+    } catch (e) {
+      console.error("Error cargando " + city, e);
+    }
   }
 </script>
 </body>
